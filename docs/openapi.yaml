@@ -1,0 +1,228 @@
+openapi: 3.0.3
+info:
+  title: Agentic URL Shortener
+  version: 1.0.0
+  description: URL redirect/analytics APIs and governed engineering workflow prototype.
+servers:
+  - url: http://localhost:5102
+paths:
+  /health:
+    get:
+      responses:
+        '200':
+          description: Process health.
+  /api/links:
+    post:
+      summary: Create a short link.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLinkRequest'
+      responses:
+        '201':
+          description: Link created.
+        '400':
+          description: Invalid URL or expiry.
+        '429':
+          description: Write rate limit exceeded.
+  /r/{code}:
+    get:
+      summary: Redirect and record a click.
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to destination.
+        '404':
+          description: Link not found or expired.
+  /api/links/{code}/analytics:
+    get:
+      summary: Get lifetime and recent daily click counts.
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Analytics returned.
+        '404':
+          description: Link not found.
+  /api/workflows:
+    post:
+      summary: Start a governed engineering workflow.
+      security:
+        - bearerAuth: []
+      x-required-permission: workflow.execute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartWorkflowRequest'
+      responses:
+        '201':
+          description: Workflow started or paused at a human gate.
+        '400':
+          description: Invalid scenario or requirement.
+    get:
+      summary: List workflow runs.
+      security:
+        - bearerAuth: []
+      x-required-permission: workflow.read
+      responses:
+        '200':
+          description: Workflow runs.
+  /api/workflows/metrics:
+    get:
+      security:
+        - bearerAuth: []
+      x-required-permission: workflow.read
+      responses:
+        '200':
+          description: Reliability metrics.
+  /api/workflows/{id}:
+    get:
+      security:
+        - bearerAuth: []
+      x-required-permission: workflow.read
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Workflow run including stage state, audit, and decisions.
+        '404':
+          description: Run not found.
+  /api/workflows/{id}/approve:
+    post:
+      security:
+        - bearerAuth: []
+      x-required-permission: workflow.approve
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalRequest'
+      responses:
+        '200':
+          description: Approval recorded and execution continued.
+        '409':
+          description: No approval is pending.
+  /api/workflows/{id}/replan:
+    post:
+      security:
+        - bearerAuth: []
+      x-required-permission: workflow.execute
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplanRequest'
+      responses:
+        '200':
+          description: Revision incremented and outputs recomputed.
+  /api/workflows/{id}/safe-stop:
+    post:
+      security:
+        - bearerAuth: []
+      x-required-permission: workflow.operator
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Execution safely stopped.
+  /api/workflows/{id}/resume:
+    post:
+      security:
+        - bearerAuth: []
+      x-required-permission: workflow.operator
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Execution resumed.
+  /api/workflows/{id}/rollback:
+    post:
+      security:
+        - bearerAuth: []
+      x-required-permission: workflow.operator
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RollbackRequest'
+      responses:
+        '200':
+          description: Generated in-memory outputs cleared and rollback recorded.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    RunId:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+  schemas:
+    CreateLinkRequest:
+      type: object
+      required: [destination]
+      properties:
+        destination:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+    StartWorkflowRequest:
+      type: object
+      required: [scenario, requirement]
+      properties:
+        scenario:
+          type: string
+          enum: [greenfield, brownfield, ambiguous]
+        requirement:
+          type: string
+          maxLength: 4000
+    ApprovalRequest:
+      type: object
+      required: [note]
+      properties:
+        note:
+          type: string
+    ReplanRequest:
+      type: object
+      required: [requirement, reason]
+      properties:
+        requirement:
+          type: string
+          maxLength: 4000
+        reason:
+          type: string
+    RollbackRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
